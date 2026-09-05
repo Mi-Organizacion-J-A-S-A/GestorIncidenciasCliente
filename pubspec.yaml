@@ -16,7 +16,8 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.2.0+1
+# Añadida clave de acceso a la app para que no se pueda abrir sin ella. Se puede cambiar en el archivo .env
+version: 1.3.0+1
 
 environment:
   sdk: ^3.11.5
@@ -96,8 +97,8 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "images/RocaVisor.png"
+  image_path: "images/RocaXestor.png"
 flutter_icons:
   android: true
   ios: true
-  image_path: "images/RocaVisor.png"
+  image_path: "images/RocaXestor.png"

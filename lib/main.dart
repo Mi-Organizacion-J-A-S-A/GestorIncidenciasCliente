@@ -26,7 +26,73 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const HomePage(),
+      home: const PasswordPage(), // Cambiado para que inicie pidiendo la clave
+    );
+  }
+}
+
+// --- NUEVA PANTALLA DE VALIDACIÓN DE CLAVE ---
+class PasswordPage extends StatefulWidget {
+  const PasswordPage({super.key});
+
+  @override
+  State<PasswordPage> createState() => _PasswordPageState();
+}
+
+class _PasswordPageState extends State<PasswordPage> {
+  final _claveController = TextEditingController();
+  bool _isError = false;
+
+  void _validarClave() {
+    // Obtenemos la clave definida en el archivo .env
+    final claveCorrecta = dotenv.env['APP_CLAVE'] ?? '';
+    
+    if (_claveController.text == claveCorrecta) {
+      // Si es correcta, reemplazamos la ruta para no poder volver atrás con el botón back
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomePage()),
+      );
+    } else {
+      setState(() => _isError = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock, size: 80, color: Colors.blue),
+              const SizedBox(height: 24),
+              const Text("Acceso al Gestor", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              TextField(
+                controller: _claveController,
+                obscureText: true, // Oculta la clave introducida
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  labelText: "Clave de acceso",
+                  errorText: _isError ? "Clave incorrecta" : null,
+                ),
+                onSubmitted: (_) => _validarClave(), // Permite validar pulsando Enter
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+                ),
+                onPressed: _validarClave,
+                child: const Text("ENTRAR", style: TextStyle(fontSize: 16)),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -80,7 +146,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --- NUEVA FUNCIÓN: FORMATO DE FECHA ---
   String _formatearFecha(String? fechaIso) {
     if (fechaIso == null) return "Fecha desconocida";
     try {
@@ -91,11 +156,10 @@ class _HomePageState extends State<HomePage> {
       final min = fecha.minute.toString().padLeft(2, '0');
       return "$dia/$mes/${fecha.year}  $hora:$min";
     } catch (e) {
-      return fechaIso; // Fallback al texto crudo si falla el parseo
+      return fechaIso;
     }
   }
 
-  // --- NUEVA FUNCIÓN: ELIMINAR INCIDENCIA ---
   void _confirmarEliminacion(Map<String, dynamic> inc) {
     showDialog(
       context: context,
@@ -109,10 +173,9 @@ class _HomePageState extends State<HomePage> {
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // Cierra el diálogo
+              Navigator.pop(context); 
               setState(() => _isLoading = true);
               try {
-                // Se asume que tu tabla tiene una columna Primary Key llamada 'id'
                 await _supabase.from('incidencias').delete().eq('id', inc['id']);
                 await _cargarIncidencias();
               } catch (e) {
@@ -156,7 +219,6 @@ class _HomePageState extends State<HomePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // FECHA EN LOS DETALLES
               Text("Registrada el: ${_formatearFecha(inc['fecha'])}", 
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 12),
@@ -166,7 +228,6 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 4),
               Text(inc['descripcion'] ?? "Sin descripción proporcionada."),
               
-              // VISUALIZACIÓN DE LA IMAGEN SI EXISTE
               if (inc['url_foto'] != null && inc['url_foto'].toString().isNotEmpty) ...[
                 const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
                 const Text("EVIDENCIA FOTOGRÁFICA:", 
@@ -239,7 +300,7 @@ class _HomePageState extends State<HomePage> {
                         elevation: 2,
                         child: InkWell(
                           onTap: () => _verDetallesCompletos(inc), 
-                          onLongPress: () => _confirmarEliminacion(inc), // Click largo para eliminar
+                          onLongPress: () => _confirmarEliminacion(inc),
                           child: Padding(
                             padding: const EdgeInsets.all(14),
                             child: Column(
@@ -263,7 +324,6 @@ class _HomePageState extends State<HomePage> {
                                         ],
                                       ),
                                     ),
-                                    // INDICADOR DE FECHA Y CLIP DE FOTO
                                     Row(
                                       children: [
                                         if (inc['url_foto'] != null)
@@ -373,7 +433,6 @@ class _ReporteroPageState extends State<ReporteroPage> {
             ),
             const SizedBox(height: 20),
             
-            // PREVISUALIZACIÓN DE IMAGEN ANTES DE SUBIR
             if (_imageFile != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -430,8 +489,8 @@ class _ReporteroPageState extends State<ReporteroPage> {
         'dispositivo': _selectedDispositivo,
         'descripcion': _descController.text,
         'url_foto': imageUrl,
-        'fecha': DateTime.now().toUtc().toIso8601String(), // Guardar siempre en UTC
-        'estado': '4' // Nueva
+        'fecha': DateTime.now().toUtc().toIso8601String(), 
+        'estado': '4'
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {

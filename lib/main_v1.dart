@@ -7,26 +7,20 @@ import 'package:image_picker/image_picker.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 1. Cargar variables de entorno
   await dotenv.load(fileName: ".env");
-
-  // 2. Inicializar Supabase (solo URL y Key)
   await Supabase.initialize(
     url: dotenv.get('SUPABASE_URL'),
     anonKey: dotenv.get('SUPABASE_KEY'),
   );
-
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Gestor de Incidencias IES',
+      title: 'Gestor de Incidencias IES. Gestor Cliente',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
@@ -37,12 +31,8 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
-//  PANTALLA PRINCIPAL – Visor de incidencias
-// ─────────────────────────────────────────────
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
-
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -59,23 +49,20 @@ class _HomePageState extends State<HomePage> {
     _autologin();
   }
 
-  // --- AUTENTICACIÓN AUTOMÁTICA ---
   Future<void> _autologin() async {
     try {
       await _supabase.auth.signInWithPassword(
-        email: dotenv.get('CORREO_SUPABASE'),
-        password: dotenv.get('CLAVE_SUPABASE'),
+        email: dotenv.get('CORREO_SUPABASE') ?? '',
+        password: dotenv.get('CLAVE_SUPABASE') ?? '',
       );
       setState(() => _isConfigured = true);
-      debugPrint("✅ Sesión iniciada automáticamente");
       await _cargarIncidencias();
     } catch (e) {
-      debugPrint("❌ Error en autologin: $e");
       setState(() => _isLoading = false);
+      debugPrint("Error de login: $e");
     }
   }
 
-  // --- CARGAR INCIDENCIAS ---
   Future<void> _cargarIncidencias() async {
     setState(() => _isLoading = true);
     try {
@@ -88,34 +75,139 @@ class _HomePageState extends State<HomePage> {
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint("❌ Error cargando incidencias: $e");
       setState(() => _isLoading = false);
+      debugPrint("Error cargando incidencias: $e");
     }
   }
 
-  // --- ABRIR FORMULARIO DE NUEVA INCIDENCIA ---
-  Future<void> _abrirNuevaIncidencia() async {
-    final enviada = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => const ReporteroPage()),
+  // --- NUEVA FUNCIÓN: FORMATO DE FECHA ---
+  String _formatearFecha(String? fechaIso) {
+    if (fechaIso == null) return "Fecha desconocida";
+    try {
+      final fecha = DateTime.parse(fechaIso).toLocal();
+      final dia = fecha.day.toString().padLeft(2, '0');
+      final mes = fecha.month.toString().padLeft(2, '0');
+      final hora = fecha.hour.toString().padLeft(2, '0');
+      final min = fecha.minute.toString().padLeft(2, '0');
+      return "$dia/$mes/${fecha.year}  $hora:$min";
+    } catch (e) {
+      return fechaIso; // Fallback al texto crudo si falla el parseo
+    }
+  }
+
+  // --- NUEVA FUNCIÓN: ELIMINAR INCIDENCIA ---
+  void _confirmarEliminacion(Map<String, dynamic> inc) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Eliminar incidencia"),
+        content: const Text("¿Estás seguro de que quieres eliminar esta incidencia de forma permanente?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text("Cancelar")
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // Cierra el diálogo
+              setState(() => _isLoading = true);
+              try {
+                // Se asume que tu tabla tiene una columna Primary Key llamada 'id'
+                await _supabase.from('incidencias').delete().eq('id', inc['id']);
+                await _cargarIncidencias();
+              } catch (e) {
+                setState(() => _isLoading = false);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Error al eliminar la incidencia")),
+                  );
+                }
+              }
+            },
+            child: const Text("Eliminar", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
-    if (enviada == true) {
-      await _cargarIncidencias(); // Refresca la lista al volver
+  }
+
+  Widget _getIconoEstado(dynamic estado) {
+    switch (estado.toString().toLowerCase()) {
+      case '0': case 'resuelta':
+        return const Icon(Icons.check_circle, color: Colors.green);
+      case '1': case 'en curso': case 'en_proceso':
+        return const Icon(Icons.build, color: Colors.blue);
+      case '2': case 'pendiente':
+        return const Icon(Icons.pending_actions, color: Colors.orange);
+      case '3': case 'crítica':
+        return const Icon(Icons.report_problem, color: Colors.red);
+      default:
+        return const Icon(Icons.fiber_new, color: Colors.grey);
     }
   }
 
-  // --- COLOR SEGÚN ESTADO (opcional, por si tu tabla tiene campo estado) ---
-  Color _colorEstado(String? estado) {
-    switch (estado) {
-      case 'pendiente':
-        return Colors.orange;
-      case 'resuelta':
-        return Colors.green;
-      case 'en_proceso':
-        return Colors.blue;
-      default:
-        return Colors.grey;
-    }
+  void _verDetallesCompletos(Map<String, dynamic> inc) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Detalles de la incidencia"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // FECHA EN LOS DETALLES
+              Text("Registrada el: ${_formatearFecha(inc['fecha'])}", 
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 12),
+
+              const Text("MI REPORTE:", 
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blue)),
+              const SizedBox(height: 4),
+              Text(inc['descripcion'] ?? "Sin descripción proporcionada."),
+              
+              // VISUALIZACIÓN DE LA IMAGEN SI EXISTE
+              if (inc['url_foto'] != null && inc['url_foto'].toString().isNotEmpty) ...[
+                const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                const Text("EVIDENCIA FOTOGRÁFICA:", 
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blue)),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    inc['url_foto'],
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => 
+                      const Text("No se pudo cargar la imagen.", style: TextStyle(color: Colors.red, fontSize: 12)),
+                  ),
+                ),
+              ],
+
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Divider(),
+              ),
+              
+              const Text("RESPUESTA DEL TÉCNICO:", 
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.orange)),
+              const SizedBox(height: 8),
+              Text(
+                inc['observaciones'] != null && inc['observaciones'].toString().isNotEmpty
+                ? inc['observaciones'] 
+                : "El técnico aún no ha añadido comentarios.",
+                style: const TextStyle(fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text("Cerrar")
+          )
+        ],
+      ),
+    );
   }
 
   @override
@@ -127,158 +219,97 @@ class _HomePageState extends State<HomePage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: "Actualizar",
             onPressed: _isConfigured ? _cargarIncidencias : null,
           ),
         ],
       ),
-      body: !_isConfigured
+      body: !_isConfigured || _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _incidencias.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.inbox_outlined,
-                              size: 64, color: Colors.grey.shade400),
-                          const SizedBox(height: 12),
-                          Text(
-                            "No hay incidencias registradas",
-                            style: TextStyle(color: Colors.grey.shade600),
-                          ),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _cargarIncidencias,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _incidencias.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final inc = _incidencias[index];
-                          final fecha = inc['fecha'] != null
-                              ? DateTime.tryParse(inc['fecha'].toString())
-                              : null;
-                          final fechaStr = fecha != null
-                              ? "${fecha.day.toString().padLeft(2, '0')}/"
-                                  "${fecha.month.toString().padLeft(2, '0')}/"
-                                  "${fecha.year}  "
-                                  "${fecha.hour.toString().padLeft(2, '0')}:"
-                                  "${fecha.minute.toString().padLeft(2, '0')}"
-                              : "Sin fecha";
-
-                          return Card(
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Aula + dispositivo
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.room, size: 16,
-                                          color: Colors.blue),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          "${inc['aula'] ?? '-'}  ·  ${inc['dispositivo'] ?? '-'}",
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 15,
+          : _incidencias.isEmpty
+              ? const Center(child: Text("No hay incidencias registradas"))
+              : RefreshIndicator(
+                  onRefresh: _cargarIncidencias,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _incidencias.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final inc = _incidencias[index];
+                      return Card(
+                        elevation: 2,
+                        child: InkWell(
+                          onTap: () => _verDetallesCompletos(inc), 
+                          onLongPress: () => _confirmarEliminacion(inc), // Click largo para eliminar
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          _getIconoEstado(inc['estado']),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              "${inc['aula']}  ·  ${inc['dispositivo']}",
+                                              style: const TextStyle(fontWeight: FontWeight.bold),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
-                                        ),
-                                      ),
-                                      // Badge estado (si existe el campo)
-                                      if (inc['estado'] != null)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: _colorEstado(
-                                                inc['estado'].toString()),
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                          ),
-                                          child: Text(
-                                            inc['estado'].toString(),
-                                            style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 11),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  // Descripción
-                                  Text(
-                                    inc['descripcion'] ?? '',
-                                    style: const TextStyle(fontSize: 14),
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Miniatura foto (si hay)
-                                  if (inc['url_foto'] != null &&
-                                      inc['url_foto'].toString().isNotEmpty)
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.network(
-                                        inc['url_foto'].toString(),
-                                        height: 120,
-                                        width: double.infinity,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            const SizedBox.shrink(),
+                                        ],
                                       ),
                                     ),
-                                  const SizedBox(height: 6),
-                                  // Fecha
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.access_time,
-                                          size: 13, color: Colors.grey),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        fechaStr,
-                                        style: const TextStyle(
-                                            fontSize: 12, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
+                                    // INDICADOR DE FECHA Y CLIP DE FOTO
+                                    Row(
+                                      children: [
+                                        if (inc['url_foto'] != null)
+                                          const Padding(
+                                            padding: EdgeInsets.only(right: 6),
+                                            child: Icon(Icons.attach_file, size: 16, color: Colors.grey),
+                                          ),
+                                        Text(
+                                          _formatearFecha(inc['fecha']),
+                                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  inc['descripcion'] ?? '',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: Colors.grey[700]),
+                                ),
+                              ],
                             ),
-                          );
-                        },
-                      ),
-                    ),
-      // Botón flotante para nueva incidencia
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
       floatingActionButton: _isConfigured
           ? FloatingActionButton.extended(
-              onPressed: _abrirNuevaIncidencia,
+              onPressed: () async {
+                final r = await Navigator.push(context, MaterialPageRoute(builder: (_) => const ReporteroPage()));
+                if (r == true) _cargarIncidencias();
+              },
               icon: const Icon(Icons.add),
               label: const Text("Nueva incidencia"),
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
             )
           : null,
     );
   }
 }
 
-// ─────────────────────────────────────────────
-//  PANTALLA DE NUEVO REPORTE (sin cambios)
-// ─────────────────────────────────────────────
 class ReporteroPage extends StatefulWidget {
   const ReporteroPage({super.key});
-
   @override
   State<ReporteroPage> createState() => _ReporteroPageState();
 }
@@ -286,206 +317,130 @@ class ReporteroPage extends StatefulWidget {
 class _ReporteroPageState extends State<ReporteroPage> {
   final _supabase = Supabase.instance.client;
   final _descController = TextEditingController();
-
-  // Datos del Instituto
-  late Map<String, List<String>> _datosInstituto;
   String? _selectedAula;
   String? _selectedDispositivo;
   File? _imageFile;
   bool _isSending = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _datosInstituto = _generarDatosInstituto();
-  }
-
-  // --- LÓGICA DE DATOS ---
   Map<String, List<String>> _generarDatosInstituto() {
     final List<String> estandar = [
-      "1ºESOA", "1ºESOB", "1ºESOC", "2ºESOA", "2ºESOB", "2ºESOC", "2ºESOD",
-      "3ºESOA", "3ºESOB", "3ºESOC", "3ºESOD", "4ºESOA", "4ºESOB", "4ºESOC", "4ºESOD",
-      "1ºBACA", "1ºBACB", "2ºBACA", "2ºBACB", "Biblioteca", "Aula Música", "Aula Plástica",
-      "Aula Bioloxía 1", "Aula Física e Química"
+      "1ºESO A", "1ºESO B", "1ºESO C", "2ºESO A", "2ºESO B", "2ºESO C", "2ºESO D","2ºESO E",
+      "3ºESO A", "3ºESO B", "3ºESO C", "3ºESO D", "4ºESO A", "4ºESO B", "4ºESO C", "4ºESO D",
+      "1ºBAC A", "1ºBAC B", "2ºBAC A", "2ºBAC B", "Biblioteca", "Aula Música", "Aula Plástica",
+      "Aula Bioloxía", "Aula Física ", "Aula Química", "Otro"
     ];
     final List<String> especiales = [
-      "Aula Informática 1", "Aula Informática 2", "Taller Tecnoloxía",
-      "Polos", "Carro 1", "Carro 2"
+      "Aula Informática 1", "Aula Informática 2", "Taller Tecnoloxía", "Polos", "Carro A", "Carro B"
     ];
-
     Map<String, List<String>> mapa = {};
     for (var aula in estandar) {
       mapa[aula] = ["Portátil", "Pantalla", "Otro"];
     }
-    List<String> pcs = List.generate(24, (i) => "PC ${i + 1}")..add("Otro");
+    List<String> pcs = List.generate(30, (i) => "PC ${i + 1}")..add("Otro");
     for (var aula in especiales) {
       mapa[aula] = List.from(pcs);
     }
     return mapa;
   }
 
-  // --- CÁMARA ---
-  Future<void> _hacerFoto() async {
-    final picker = ImagePicker();
-    final foto =
-        await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
-    if (foto != null) {
-      setState(() => _imageFile = File(foto.path));
-    }
+  @override
+  Widget build(BuildContext context) {
+    final datos = _generarDatosInstituto();
+    return Scaffold(
+      appBar: AppBar(title: const Text("Nueva Incidencia")),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: ListView(
+          children: [
+            DropdownButtonFormField<String>(
+              value: _selectedAula,
+              hint: const Text("Selecciona Aula"),
+              items: datos.keys.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
+              onChanged: (val) => setState(() { _selectedAula = val; _selectedDispositivo = null; }),
+            ),
+            const SizedBox(height: 20),
+            DropdownButtonFormField<String>(
+              value: _selectedDispositivo,
+              hint: const Text("Selecciona Dispositivo"),
+              items: (_selectedAula == null) ? [] : datos[_selectedAula]!.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+              onChanged: (val) => setState(() => _selectedDispositivo = val),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _descController, 
+              decoration: const InputDecoration(hintText: "Descripción del problema..."),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 20),
+            
+            // PREVISUALIZACIÓN DE IMAGEN ANTES DE SUBIR
+            if (_imageFile != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.file(_imageFile!, height: 150, fit: BoxFit.cover),
+              ),
+              const SizedBox(height: 10),
+            ],
+            
+            ElevatedButton.icon(
+              onPressed: () async {
+                final picker = ImagePicker();
+                final foto = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+                if (foto != null) setState(() => _imageFile = File(foto.path));
+              },
+              icon: Icon(_imageFile == null ? Icons.camera_alt : Icons.cameraswitch),
+              label: Text(_imageFile == null ? "HACER FOTO" : "CAMBIAR FOTO"),
+            ),
+            const SizedBox(height: 40),
+            
+            _isSending 
+              ? const Center(child: CircularProgressIndicator())
+              : ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                  onPressed: _enviarIncidencia,
+                  child: const Text("ENVIAR INCIDENCIA", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+          ],
+        ),
+      ),
+    );
   }
 
-  // --- ENVÍO A SUPABASE ---
   Future<void> _enviarIncidencia() async {
-    if (_selectedAula == null ||
-        _selectedDispositivo == null ||
-        _descController.text.isEmpty) {
-      _mostrarMensaje("Por favor, completa todos los campos");
+    if (_selectedAula == null || _selectedDispositivo == null || _descController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Por favor, rellena todos los campos de texto.")),
+      );
       return;
     }
-
     setState(() => _isSending = true);
-
     try {
       String? imageUrl;
-
-      // 1. Subir imagen si existe
       if (_imageFile != null) {
-        final nombreArchivo =
-            'img_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        await _supabase.storage
-            .from('evidencias')
-            .upload(nombreArchivo, _imageFile!);
-        imageUrl = _supabase.storage
-            .from('evidencias')
-            .getPublicUrl(nombreArchivo);
+        final name = 'img_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        await _supabase.storage.from('evidencias').upload(name, _imageFile!);
+        imageUrl = _supabase.storage.from('evidencias').getPublicUrl(name);
       }
-
-      // 2. Insertar fila
       await _supabase.from('incidencias').insert({
         'aula': _selectedAula,
         'dispositivo': _selectedDispositivo,
         'descripcion': _descController.text,
         'url_foto': imageUrl,
-        'fecha': DateTime.now().toIso8601String(),
+        'fecha': DateTime.now().toUtc().toIso8601String(), // Guardar siempre en UTC
+        'estado': '4' // Nueva
       });
-
-      _mostrarMensaje("✅ Incidencia enviada con éxito");
-      _limpiarFormulario();
-
-      // Volver a la pantalla principal indicando que se envió algo
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      _mostrarMensaje("❌ Error al enviar: $e");
-    } finally {
       setState(() => _isSending = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error al enviar: $e")),
+        );
+      }
     }
-  }
-
-  void _limpiarFormulario() {
-    _descController.clear();
-    setState(() {
-      _selectedAula = null;
-      _selectedDispositivo = null;
-      _imageFile = null;
-    });
-  }
-
-  void _mostrarMensaje(String texto) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(texto)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Nueva Incidencia"),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: ListView(
-          children: [
-            // Selector de Aula
-            DropdownButtonFormField<String>(
-              value: _selectedAula,
-              hint: const Text("Selecciona Aula"),
-              decoration:
-                  const InputDecoration(border: OutlineInputBorder()),
-              items: _datosInstituto.keys
-                  .map((a) =>
-                      DropdownMenuItem(value: a, child: Text(a)))
-                  .toList(),
-              onChanged: (val) => setState(() {
-                _selectedAula = val;
-                _selectedDispositivo = null;
-              }),
-            ),
-            const SizedBox(height: 20),
-
-            // Selector de Dispositivo (dependiente)
-            DropdownButtonFormField<String>(
-              value: _selectedDispositivo,
-              hint: const Text("Selecciona Dispositivo"),
-              decoration:
-                  const InputDecoration(border: OutlineInputBorder()),
-              items: (_selectedAula == null)
-                  ? []
-                  : _datosInstituto[_selectedAula]!
-                      .map((d) =>
-                          DropdownMenuItem(value: d, child: Text(d)))
-                      .toList(),
-              onChanged: _selectedAula == null
-                  ? null
-                  : (val) =>
-                      setState(() => _selectedDispositivo = val),
-            ),
-            const SizedBox(height: 20),
-
-            // Descripción
-            TextField(
-              controller: _descController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: "Describe el problema...",
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Botón Cámara
-            ElevatedButton.icon(
-              onPressed: _hacerFoto,
-              icon: const Icon(Icons.camera_alt),
-              label: const Text("HACER FOTO"),
-            ),
-            if (_imageFile != null) ...[
-              const SizedBox(height: 10),
-              Image.file(_imageFile!, height: 150, fit: BoxFit.cover),
-            ],
-
-            const SizedBox(height: 40),
-
-            // Botón Enviar
-            SizedBox(
-              height: 50,
-              child: _isSending
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
-                      onPressed: _enviarIncidencia,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text(
-                        "ENVIAR INCIDENCIA",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

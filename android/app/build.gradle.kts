@@ -1,36 +1,37 @@
 import java.util.Properties
 import java.io.FileInputStream
+import com.android.build.gradle.internal.api.ApkVariantOutputImpl
 
-// 1. Definir la variable FUERA para que sea accesible en todo el archivo
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
+
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
-    namespace = "org.iespr.gestorincidencias" // Ajusta a tu package name real
+    namespace = "org.iespr.gestorincidencias"
     compileSdk = flutter.compileSdkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+kotlinOptions {
+    jvmTarget = "21"
+}
 
     sourceSets {
         getByName("main").java.srcDirs("src/main/kotlin")
     }
+
     ndkVersion = "28.2.13676358"
+
     defaultConfig {
         applicationId = "org.iespr.gestorincidencias"
         minSdk = flutter.minSdkVersion
@@ -39,24 +40,35 @@ android {
         versionName = flutter.versionName
     }
 
-    // 2. CONFIGURACIÓN DE FIRMA (Sintaxis corregida para KTS)
     signingConfigs {
         create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String?
             keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
+            storeFile = keystoreProperties["storeFile"]?.let {
+                file(it as String)
+            }
             storePassword = keystoreProperties["storePassword"] as String?
         }
     }
 
     buildTypes {
         getByName("release") {
-            // 3. Vincular la firma
             signingConfig = signingConfigs.getByName("release")
-            
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+   applicationVariants.all {
+        val versionName = this.versionName
+        this.outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "GestorIncidencias-${versionName}.apk"
         }
     }
 }
