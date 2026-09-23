@@ -208,8 +208,7 @@ class _HomePageState extends State<HomePage> {
         return const Icon(Icons.fiber_new, color: Colors.grey);
     }
   }
-
-  void _verDetallesCompletos(Map<String, dynamic> inc) {
+void _verDetallesCompletos(Map<String, dynamic> inc) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -222,6 +221,19 @@ class _HomePageState extends State<HomePage> {
               Text("Registrada el: ${_formatearFecha(inc['fecha'])}", 
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 12),
+
+              // --- INICIO DEL CÓDIGO AÑADIDO ---
+              const Text("UBICACIÓN Y EQUIPO:", 
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blue)),
+              const SizedBox(height: 4),
+              Text("Grupo / Aula: ${inc['aula'] ?? 'No especificado'}"),
+              const SizedBox(height: 4),
+              Text("Dispositivo: ${inc['dispositivo'] ?? 'No especificado'}"),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Divider(),
+              ),
+              // --- FIN DEL CÓDIGO AÑADIDO ---
 
               const Text("MI REPORTE:", 
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blue)),
@@ -270,6 +282,11 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
+
+
+
+
 
   @override
   Widget build(BuildContext context) {
